@@ -1,3 +1,4 @@
+from cProfile import label
 from os import listdir
 from os.path import join
 import random
@@ -14,9 +15,9 @@ from utils.bytesIO import PickledImageProvider, bytes_to_file
 
 
 class DatasetFromObj(data.Dataset):
-    def __init__(self, obj_path, input_nc=3, augment=False, bold=False, rotate=False, blur=False, start_from=0):
+    def __init__(self, obj_path, input_nc=3, augment=False, bold=False, rotate=False, blur=False, start_from=0, labels=None):
         super(DatasetFromObj, self).__init__()
-        self.image_provider = PickledImageProvider(obj_path)
+        self.image_provider = PickledImageProvider(obj_path, labels=labels)
         self.input_nc = input_nc
         if self.input_nc == 1:
             self.transform = transforms.Normalize(0.5, 0.5)

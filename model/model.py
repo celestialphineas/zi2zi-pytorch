@@ -14,7 +14,7 @@ class Zi2ZiModel:
                  ngf=64, ndf=64,
                  Lconst_penalty=15, Lcategory_penalty=1, L1_penalty=100,
                  schedule=10, lr=0.001, gpu_ids=None, save_dir='.', is_training=True,
-                 image_size=256):
+                 image_size=256, freeze_encoder=False):
 
         if is_training:
             self.use_dropout = True
@@ -38,6 +38,8 @@ class Zi2ZiModel:
         self.lr = lr
         self.is_training = is_training
         self.image_size = image_size
+        self.freeze_encoder = freeze_encoder
+        #TODO: Freeze the encoders
 
     def setup(self):
 

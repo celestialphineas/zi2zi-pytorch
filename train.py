@@ -1,3 +1,4 @@
+from cProfile import label
 from data import DatasetFromObj
 from torch.utils.data import DataLoader
 from model import Zi2ZiModel
@@ -35,7 +36,7 @@ parser.add_argument('--inst_norm', action='store_true',
                     help='use conditional instance normalization in your model')
 parser.add_argument('--sample_steps', type=int, default=10,
                     help='number of batches in between two samples are drawn from validation set')
-parser.add_argument('--checkpoint_steps', type=int, default=100,
+parser.add_argument('--checkpoint_epochs', type=int, default=100,
                     help='number of batches in between two checkpoints')
 parser.add_argument('--flip_labels', action='store_true',
                     help='whether flip training data labels or not, in fine tuning')
@@ -62,10 +63,22 @@ def main():
 
     start_time = time.time()
 
+    try:
+        import visdom
+        vis = visdom.Visdom(server='http://localhost', port=8097, env='main')
+        if not vis.check_connection():
+            raise
+    except:
+        print('Cannot connect to visdom server.')
+
     # train_dataset = DatasetFromObj(os.path.join(data_dir, 'train.obj'),
     #                                augment=True, bold=True, rotate=True, blur=True)
     # val_dataset = DatasetFromObj(os.path.join(data_dir, 'val.obj'))
     # dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+
+    labels = None
+    if args.fine_tune is not None:
+        labels = [ int(label) for label in args.fine_tune.split(',') ]
 
     model = Zi2ZiModel(
         input_nc=args.input_nc,
@@ -74,7 +87,8 @@ def main():
         Lconst_penalty=args.Lconst_penalty,
         Lcategory_penalty=args.Lcategory_penalty,
         save_dir=checkpoint_dir,
-        gpu_ids=args.gpu_ids
+        gpu_ids=args.gpu_ids,
+        freeze_encoder=args.freeze_encoder
     )
     model.setup()
     model.print_networks(True)
@@ -87,30 +101,46 @@ def main():
 
     global_steps = 0
 
+    line_x = []; line_y = []
+    # generate train dataset every epoch so that different styles of saved char imgs can be trained.
+    train_dataset = DatasetFromObj(
+        os.path.join(data_dir, 'train.obj'),
+        input_nc=args.input_nc,
+        augment=True,
+        bold=False,
+        rotate=False,
+        blur=True,
+        labels=labels
+    )
+    total_batches = math.ceil(len(train_dataset) / args.batch_size)
+    dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+
     for epoch in range(args.epoch):
-        # generate train dataset every epoch so that different styles of saved char imgs can be trained.
-        train_dataset = DatasetFromObj(
-            os.path.join(data_dir, 'train.obj'),
-            input_nc=args.input_nc,
-            augment=True,
-            bold=False,
-            rotate=False,
-            blur=True,
-        )
-        total_batches = math.ceil(len(train_dataset) / args.batch_size)
-        dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+        if epoch-1 > 0 and epoch-1 % args.checkpoint_epochs == 0:
+            model.save_networks(epoch-1)
+            print("Checkpoint: save checkpoint epoch %d" % epoch-1)
         for bid, batch in enumerate(dataloader):
             model.set_input(batch[0], batch[2], batch[1])
             const_loss, l1_loss, category_loss, cheat_loss = model.optimize_parameters()
-            if bid % 100 == 0:
+            if bid % 20 == 0:
                 passed = time.time() - start_time
                 log_format = "Epoch: [%2d], [%4d/%4d] time: %4.2f, d_loss: %.5f, g_loss: %.5f, " + \
                              "category_loss: %.5f, cheat_loss: %.5f, const_loss: %.5f, l1_loss: %.5f"
                 print(log_format % (epoch, bid, total_batches, passed, model.d_loss.item(), model.g_loss.item(),
                                     category_loss, cheat_loss, const_loss, l1_loss))
-            if global_steps % args.checkpoint_steps == 0:
-                model.save_networks(global_steps)
-                print("Checkpoint: save checkpoint step %d" % global_steps)
+                line_x.append((epoch + bid/total_batches))
+                line_y.append([ model.d_loss.item(), model.g_loss.item(), 
+                    float(category_loss.cpu().data), float(cheat_loss.cpu().data),
+                    float(const_loss.cpu().data), float(l1_loss.cpu().data) ])
+                vis.line(
+                    X=line_x,
+                    Y=line_y,
+                    opts={
+                        'title': 'zi2zi loss over time',
+                        'legend': [ 'd_loss', 'g_loss', 'category_loss', 'cheat_loss', 'const_loss', 'l1_loss' ]
+                    },
+                    win=0
+                )
             if global_steps % args.sample_steps == 0:
                 for vbid, val_batch in enumerate(val_dataloader):
                     model.sample(val_batch, os.path.join(sample_dir, str(global_steps)))
@@ -121,7 +151,7 @@ def main():
     for vbid, val_batch in enumerate(val_dataloader):
         model.sample(val_batch, os.path.join(sample_dir, str(global_steps)))
         print("Checkpoint: save checkpoint step %d" % global_steps)
-    model.save_networks(global_steps)
+    model.save_networks(epoch)
 
 
 if __name__ == '__main__':
