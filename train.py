@@ -86,8 +86,11 @@ def main():
         embedding_dim=args.embedding_dim,
         Lconst_penalty=args.Lconst_penalty,
         Lcategory_penalty=args.Lcategory_penalty,
+        L1_penalty=args.L1_penalty,
+        lr=args.lr,
         save_dir=checkpoint_dir,
         gpu_ids=args.gpu_ids,
+        image_size=args.image_size,
         freeze_encoder=args.freeze_encoder
     )
     model.setup()
@@ -116,9 +119,9 @@ def main():
     dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
 
     for epoch in range(args.epoch):
-        if epoch-1 > 0 and epoch-1 % args.checkpoint_epochs == 0:
-            model.save_networks(epoch-1)
-            print("Checkpoint: save checkpoint epoch %d" % epoch-1)
+        if epoch > 0 and epoch % args.checkpoint_epochs == 0:
+            model.save_networks(epoch)
+            print("Checkpoint: save checkpoint epoch %d" % epoch)
         for bid, batch in enumerate(dataloader):
             model.set_input(batch[0], batch[2], batch[1])
             const_loss, l1_loss, category_loss, cheat_loss = model.optimize_parameters()
@@ -151,7 +154,8 @@ def main():
     for vbid, val_batch in enumerate(val_dataloader):
         model.sample(val_batch, os.path.join(sample_dir, str(global_steps)))
         print("Checkpoint: save checkpoint step %d" % global_steps)
-    model.save_networks(epoch)
+    model.save_networks(epoch+1)
+    model.save_networks('latest')
 
 
 if __name__ == '__main__':

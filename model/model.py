@@ -4,7 +4,6 @@ from .generators import UNetGenerator
 from .discriminators import Discriminator
 from .losses import CategoryLoss, BinaryLoss
 import os
-from torch.optim.lr_scheduler import StepLR
 from utils.init_net import init_net
 import torchvision.utils as vutils
 
@@ -13,7 +12,7 @@ class Zi2ZiModel:
     def __init__(self, input_nc=3, embedding_num=40, embedding_dim=128,
                  ngf=64, ndf=64,
                  Lconst_penalty=15, Lcategory_penalty=1, L1_penalty=100,
-                 schedule=10, lr=0.001, gpu_ids=None, save_dir='.', is_training=True,
+                 lr=0.001, gpu_ids=None, save_dir='.', is_training=True,
                  image_size=256, freeze_encoder=False):
 
         if is_training:
@@ -24,8 +23,6 @@ class Zi2ZiModel:
         self.Lconst_penalty = Lconst_penalty
         self.Lcategory_penalty = Lcategory_penalty
         self.L1_penalty = L1_penalty
-
-        self.schedule = schedule
 
         self.save_dir = save_dir
         self.gpu_ids = gpu_ids
@@ -64,7 +61,7 @@ class Zi2ZiModel:
         self.optimizer_G = torch.optim.Adam(self.netG.parameters(), lr=self.lr, betas=(0.5, 0.999))
         self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=self.lr, betas=(0.5, 0.999))
 
-        self.category_loss = CategoryLoss(self.embedding_num)
+        self.category_loss = CategoryLoss(self.embedding_num, gpu_ids=self.gpu_ids)
         self.real_binary_loss = BinaryLoss(True)
         self.fake_binary_loss = BinaryLoss(False)
         self.l1_loss = nn.L1Loss()
@@ -135,7 +132,7 @@ class Zi2ZiModel:
 
         cheat_loss = self.real_binary_loss(fake_D_logits)
 
-        self.g_loss = cheat_loss + l1_loss + fake_category_loss + const_loss
+        self.g_loss = cheat_loss.cuda() + l1_loss.cuda() + fake_category_loss.cuda() + const_loss.cuda()
         self.g_loss.backward()
         return const_loss, l1_loss, cheat_loss
 

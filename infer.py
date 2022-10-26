@@ -41,7 +41,7 @@ parser.add_argument('--embedding_dim', type=int, default=128, help="dimension fo
 parser.add_argument('--batch_size', type=int, default=16, help='number of examples in batch')
 parser.add_argument('--lr', type=float, default=0.001, help='initial learning rate for adam')
 parser.add_argument('--resume', type=int, default=None, help='resume from previous training')
-parser.add_argument('--obj_path', type=str, default='./experiment/data/val.obj', help='the obj file you infer')
+parser.add_argument('--obj_path', type=str, default=None, help='the obj file you infer')
 parser.add_argument('--input_nc', type=int, default=1)
 
 parser.add_argument('--from_txt', action='store_true')
@@ -109,12 +109,13 @@ def main():
         dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
 
     else:
-        val_dataset = DatasetFromObj(os.path.join(data_dir, 'val.obj'),
-                                     input_nc=args.input_nc,
-                                     start_from=args.start_from)
+        val_dataset = DatasetFromObj(
+            args.obj_path if args.obj_path is not None else os.path.join(data_dir, 'val.obj'),
+            input_nc=args.input_nc,
+            start_from=args.start_from)
         dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
 
-    global_steps = 0
+    count = 0
     with open(args.type_file, 'r', encoding='utf-8') as fp:
         fonts = [s.strip() for s in fp.readlines()]
     writer_dict = {v: k for k, v in enumerate(fonts)}
@@ -132,8 +133,12 @@ def main():
         else:
             # model.set_input(batch[0], batch[2], batch[1])
             # model.optimize_parameters()
-            model.sample(batch, infer_dir)
-            global_steps += 1
+            with torch.no_grad():
+                model.set_input(batch[0], batch[2], batch[1])
+                model.forward()
+                for label, img_tensor in zip(batch[0], model.fake_B):
+                    save_image(img_tensor, os.path.join(infer_dir, '%05d.png' % count))
+                    count+=1
 
     t_finish = time.time()
 
